@@ -7,24 +7,60 @@
 ;; Version 1.  April 25, 2018
 ;;-------------------------------------------------------
 	BITS 32 		; for ELF32 exec format
+	org  0x08048000
 
 %assign SYS_EXIT	1	; syscall for "exit" 32-bit x86 kernel api
 %assign SYS_WRITE	4	; syscall for "write" ...
 %assign STDOUT		1	; flag for "write" to stdout
 
-	global _start
-_start:			; program entry point
+;;----------------------------------------------------------------
+;; ELF - 32-bit executable header ...
+;;----------------------------------------------------------------
+ehdr:
+	db	0x7f, 'ELF'	; magic header bits
+	db	1, 1, 1, 0	; e_ident
+times 8 db	0		;
+	dw	2	 	; 32-bit machine format
+	dw	3		; intel 386+
+	dd	1		; multi-byte fields staring with offset 0x10
+	dd	_start		; e_entry
+	dd	phdr - $$	; e_phoff
+	dd	0
+	dd	0
+	dw	ehdrsize
+	dw	phdrsize
+	dw	1
+	dw	0
+	dw	0
+	dw	0
+
+ehdrsize	equ $ - ehdr
+
+phdr:
+	dd	1
+	dd	0
+	dd	$$
+	dd	$$
+	dd	filesize
+	dd	filesize
+	dd	5
+	dd	0x1000
+
+phdrsize	equ	$ - phdr
+
+;;----------------------------------------------------------------
 	section .data
 
 data_lhs:	db	'N', '-', 246
 data_rhs:	db	'N',      102
 
 	section .text
+_start:
 	;
 	call	toASCII
 	;
-	mov	edx, eax
-	call	printString
+;	mov	edx, eax
+;	call	printString
 
 	call	exit		; exit program - to console
 	ret			; return to cli
@@ -51,6 +87,7 @@ data_rhs:	db	'N',      102
 ;;	call	toASCII
 ;;--------------------------------------------------------------
 toASCII:
+	jmp .entry
 	section .bss		; data stack segment
 .decstr:			;
 	resb	10		; reserve 10 bytes
@@ -62,7 +99,7 @@ toASCII:
 .operator:
 	db	0
 	section .text
-
+.entry:
 	mov	al, [data_lhs]
 	cmp	al, 'N' 	; is bin-num?
 	je	.num
@@ -79,7 +116,7 @@ toASCII:
 	cmp	edx, 0
 	jg	.error
 .error:
-;	call	printString
+	call	printString
 	ret
 	;
 .num:
@@ -95,11 +132,15 @@ toASCII:
 	je	.ops
 	;
 	mov	bl, '+' 	; default is plus!
-.ops:	mov	[.operator], bl ; set it
+.ops:
+	mov	eax, [ebx] ; set it
 	;
-	mov	ecx, .operator	; first, print sign flag
+	mov	ecx, eax	; first, print sign flag
 	mov	edx, 1  	; 1 char
 	call	printString	; ...
+call exit	;
+	mov	eax, 0			; set upper: 0
+	mov	al, byte [data_lhs+2]	; set lower: data_lhs
 	;
 	mov	dword [.ctl], 0 ; initial  0
 	mov	edi, .decstr	; edi points to decstr
@@ -176,10 +217,22 @@ println:
 ;;------------------------------------------------------------------
 exit:
 	mov	eax, SYS_EXIT   ; exit()
-	mov	ebx, 0		; return code 0 - normal exit
+	mov	ebx, 42		; return code 0 - normal exit
 	int	80h		; syscall
 	ret
 
+;;------------------------------------------------------------------
+;; insertChar	insert a character start at position in
+;;		eax.
+;; Example:
+;;	mov	ebx, [eax]	; buffer + insert pos
+;;	mov	esi, [edx]	; buffer + end pos
+;;	add	esi, 1		; bump text right by 1
+;;	mov	ecx, 
+;;	rep	movsb		; move 'em!
+;;	mov	byte [ebx], eax
+;;------------------------------------------------------------------
+	std
 strlen:
 	; calculate string length
 	mov	edx, 0		; init counter -1
@@ -199,3 +252,4 @@ write_string:
 	int	80h 		; Linux syscall
 	ret			; return to callee function
 
+filesize	equ	$ - $$
